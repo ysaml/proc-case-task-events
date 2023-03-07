@@ -1,0 +1,12 @@
+{
+	tasks: [
+		{
+			whatId: vars.accountId,
+			priority: "High",
+			subject: vars.accountId.subject,
+			description: payload.activity
+
+		}
+
+	]
+}		

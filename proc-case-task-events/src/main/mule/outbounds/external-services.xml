@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd">
+
+
+	<flow name="ExposedRequestActivity" doc:id="007a8bb4-9558-49cc-9273-b53565ebb367" >
+		<http:listener doc:name="Listener" doc:id="c2ce2b68-743f-4c4a-9c9f-951d1c57536c" config-ref="HTTP_Listener_config" path="/activity"/>
+		<http:request method="GET" doc:name="Request" doc:id="d9b11d24-b3e9-472a-b81b-2abf2b27da3c" config-ref="HTTP_BoredAPI_Request_configuration" path="/api/activity"/>
+	</flow>
+	<flow name="RequestActivity" doc:id="cfe0cc0b-5acb-49a8-8be3-90e1fa67ea10">
+		<http:request method="GET" doc:name="Request" doc:id="b949bdb6-4412-4d3b-a629-2c75598235ba" config-ref="HTTP_BoredAPI_Request_configuration" path="/api/activity" />
+	</flow>
+	<flow name="DumpToSFTPserver" doc:id="3cf843b7-b0ed-4216-bb62-cb4f71868dde" >
+		<http:listener doc:name="/dump" doc:id="0ad81808-2a4b-4df2-b642-9512ae4f920f" path="/dump" allowedMethods="POST" config-ref="HTTP_Listener_config"/>
+		<set-variable value='#[output application/csv &#10;--- &#10; payload.tasks map (p1,p2) -&gt; {&#10; 	"id" : p1.id,&#10;	"subject" : p1.subject,&#10;	"status" : p1.status,&#10;	"priority" : p1.priority&#10;}]' doc:name="attachment" doc:id="ebab9aff-e1e7-4dab-acab-dc6ceb6919e7" variableName="attachment"/>
+		<sftp:write doc:name="Write" doc:id="5aece2a1-8202-4a3a-b8c8-9c0ae23241b8" path='#[payload.fileName]'  config-ref="SFTP_Config">
+			<sftp:content ><![CDATA[#[output application/csv 
+--- 
+ payload.tasks map (p1,p2) -> {
+ 	"id" : p1.id,
+	"subject" : p1.subject,
+	"status" : p1.status,
+	"priority" : p1.priority
+}]]]></sftp:content>
+		</sftp:write>
+		<http:request method="GET" doc:name="smtp email notif" doc:id="49c0a88a-2acd-4529-9e14-e94e492a4af9" config-ref="HTTP_SMTP_Request_configuration" path="/api/emails/attachcsv" sendCorrelationId="AUTO" correlationId="#[correlationId]">
+			<http:body><![CDATA[#[{
+    "salutation": "Good day,",
+    "subject": "Email Subject",
+    "body": "Email Body",
+    "closing" : "Have a nice one",
+    "attachment": {
+        "filename" : "report.csv",
+        "file" : vars.attachment
+    }
+}]]]></http:body>
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"recipient" : "eugene.bacolod@simplus.com"
+}]]]></http:headers>
+		</http:request>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="246ff5de-bb72-4846-ad88-90e393ce8993" type="ANY">
+				<ee:transform doc:name="Transform Message" doc:id="8029fe5b-ecd6-43bd-b87d-87b37de811f4" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	message : error.detailedDescription
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+</mule>

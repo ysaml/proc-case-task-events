@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+	<flow name="Scheduler" doc:id="66607eaa-c844-4609-a87f-f16658c304a2" initialState="stopped">
+		<scheduler doc:name="Scheduler" doc:id="383f622f-d626-422f-8e87-c13509f72576" >
+			<scheduling-strategy >
+				<cron expression="${cron.scheduler}" timeZone="Asia/Manila" />
+			</scheduling-strategy>
+		</scheduler>
+		<flow-ref doc:name="Flow Reference" doc:id="c9236aa5-5067-4ae6-bc13-4853111a106d" name="ProcessCase"/>
+		<error-handler>
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="ac67f874-ebb5-4641-a415-7d2921553af9" type="ANY"/>
+		</error-handler>
+	</flow>
+	<flow name="ExposedProcessCase" doc:id="5a8e007c-aa6c-45e5-998d-e4a2b84be004" initialState="started">
+		<http:listener doc:name="/process" doc:id="d0a34b7a-67c5-446b-bf96-ee42d404490f" config-ref="HTTP_Listener_config" path="/process" allowedMethods="POST"/>
+		<flow-ref doc:name="Flow Reference" doc:id="0319f9f4-ec4c-43b9-b773-6634ba532abb" name="ProcessCase" />
+	</flow>
+	<flow name="ProcessCase" doc:id="65afd6d8-4ef9-424d-9d3f-56c720f710a8" initialState="started">
+		<http:request method="GET" doc:name="Extract New Cases" doc:id="86c5fe4b-47ef-477b-9e69-bf7c3dfcd4ad" config-ref="HTTP_ProcCaseRequest_configuration" path="/api/Case/RetrieveNew" outputMimeType="application/json" />
+		<foreach doc:name="For Each" doc:id="9a4acee6-dfc8-476b-87f9-34d0a19152f5" collection="#[payload]" >
+			<choice doc:name="Check Priority" doc:id="6fa66396-330c-4896-b975-d8393cd751b3" >
+				<when expression='#[payload.Priority=="High"]' >
+					<flow-ref doc:name="Request Activity" doc:id="56f7c08b-141c-48e7-9426-9e2e769a1651" name="RequestActivity" />
+					<set-variable value='#[%dw 2.0&#10;output application/json&#10;---&#10;[&#10;		{&#10;			priority: "High",&#10;  			status : "Not Started",&#10;			description: payload.activity&#10;		},&#10;		{&#10;			priority: "High",&#10;  			status : "Not Started",&#10;			description: payload.activity&#10;		},&#10;		{&#10;			priority: "High",&#10;  			status : "Not Started",&#10;			description: payload.activity&#10;		}&#10;		]]' doc:name="Create Tasks" doc:id="b6d1a33f-c737-4deb-9f5e-3d9d99615f93" variableName="tasks" />
+				</when>
+				<when expression='#[payload.Priority=="Low"]' >
+					<flow-ref doc:name="Request Activity" doc:id="a4e84c8d-cb94-4c56-85cd-3ddb015e645b" name="RequestActivity" />
+					<set-variable value='#[%dw 2.0&#10;output application/json&#10;---&#10;[{&#10;			priority: "High",&#10;  			status : "Not Started",&#10;			description: payload.activity&#10;		},&#10;		{&#10;			priority: "High",&#10;  			status : "Not Started",&#10;			description: payload.activity&#10;		}]]' doc:name="Create Tasks" doc:id="b52759b7-a743-41ee-a108-668c83bfbd92" variableName="tasks" />
+				</when>
+				<when expression='#[payload.Priority=="Medium"]' >
+					<flow-ref doc:name="Request Activity" doc:id="e54465ee-fc40-4818-8f27-ebdc484e6431" name="RequestActivity" />
+					<set-variable value='#[%dw 2.0&#10;output application/json&#10;---&#10;[&#10;		{&#10;			priority: "High",&#10;			description: payload.activity,&#10;  			status : "Not Started",&#10;		}&#10;]]' doc:name="Create Tasks" doc:id="80923a11-50e3-4a5c-8743-ea7cb00669c0" variableName="tasks" />
+				</when>
+				<otherwise >
+					<set-variable value='#[%dw 2.0&#10;output application/json&#10;---&#10;[&#10;		{&#10;			priority: "High",&#10;  			status : "Not Started",&#10;			description: "no task created - this is dummy task"&#10;		}&#10;]]' doc:name="Create Tasks1" doc:id="9f12c455-a9a5-4446-965e-d02ee37721db" variableName="tasks" />
+				</otherwise>
+			</choice>
+			<http:request method="POST" doc:name="Create Tasks" doc:id="1947fcd6-b63f-4403-862b-a45c9b739d10" config-ref="HTTP_System_Salesforce_Request_configuration" path="/tasks" outputMimeType="application/json" target="createdTasks">
+				<http:body ><![CDATA[#[output application/json
+---
+{
+	"tasks": vars.tasks map ( task , indexOfTask ) -> {
+		WhatId: vars.counter.Id,
+		Priority: task.priority,
+		Description: task.description,
+		Status: task.status,
+		ActivityDate : now() as Date
+	}
+}]]]></http:body>
+			</http:request>
+			<logger level="INFO" doc:name="Request Created" doc:id="473b15bf-75a2-4ee4-960e-196d18a26c62" message="Request Created"/>
+			<logger level="INFO" doc:name="Payload" doc:id="df9bed5c-6e3a-4d1c-bc8c-fdc8a3efb4ca" message='#[output application/json&#10;---&#10;{&#10;	"tasks": vars.tasks map ( task , indexOfTask ) -&gt; {&#10;		WhatId: vars.counter.Id,&#10;		Priority: task.priority,&#10;		Description: task.description,&#10;		Status: task.status,&#10;		ActivityDate : now() as Date&#10;	}&#10;}]' />
+			<logger level="INFO" doc:name="CreatedTasks" doc:id="ec7ac18d-aa73-4384-ab99-1c55718cd311" message='#[output application/json&#10;---&#10;vars.createdTasks]' />
+		</foreach>
+		<ee:transform doc:name="Transform Message" doc:id="792e79b1-cc49-4111-8ef1-3f073a4531c1" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+	payload map(p1,p2) -> {
+		"Id" : p1.AccountId,
+		"priority" : p1.Priority,
+		"status" : p1.Status,
+		"subject" : p1.Subject
+	}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="1cbe4782-7e05-49ab-9bf9-32f93072f803" />
+		<error-handler>
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="ba56591c-f94f-4739-8627-ff23381761c3" type="ANY">
+				<ee:transform doc:name="Transform Message" doc:id="c84e6b4b-0c94-41d5-827d-e4945f25cc09" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"error" : error.detailedDescription
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+</mule>
